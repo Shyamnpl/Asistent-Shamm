@@ -92,6 +92,11 @@
             border-radius: 4px;
             pointer-events: none;
         }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid rgba(255, 0, 0, 0.5);
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen text-white p-4">
@@ -133,6 +138,11 @@
             <h3 class="text-sm font-bold mb-2">Detected Objects:</h3>
             <div id="objectsList" class="text-xs"></div>
         </div>
+
+        <!-- Error Display -->
+        <div id="errorDisplay" class="error-message p-3 mb-4 rounded-xl hidden">
+            <p id="errorText" class="text-sm"></p>
+        </div>
         
         <!-- Voice Status -->
         <div id="voiceStatus" class="glassmorphism p-4 mb-4 text-center rounded-xl">
@@ -169,6 +179,8 @@
         const detectionResults = document.getElementById('detectionResults');
         const objectsList = document.getElementById('objectsList');
         const cameraStatus = document.getElementById('cameraStatus');
+        const errorDisplay = document.getElementById('errorDisplay');
+        const errorText = document.getElementById('errorText');
         
         // App State
         let isListening = false;
@@ -178,11 +190,22 @@
         let isAISpeaking = false;
         let detectionModel = null;
         let isDetecting = false;
+        let apiRetryCount = 0;
+        const MAX_RETRIES = 3;
         
         // API Configuration
-        const HF_TOKEN = "AIzaSyBE5H6VEYPCD8xj73B_5l6gCasLn9GubSI";
+        const HF_TOKEN = "AIzaSyCAeedrWW42idbmY_6ad7YnWRe9dMgvPDY";
         const MODEL = "gemini-2.5-pro";
         
+        // Show error message
+        function showError(message) {
+            errorText.textContent = message;
+            errorDisplay.classList.remove('hidden');
+            setTimeout(() => {
+                errorDisplay.classList.add('hidden');
+            }, 5000);
+        }
+
         // TensorFlow.js Model
         async function loadDetectionModel() {
             try {
@@ -193,6 +216,7 @@
                 return true;
             } catch (error) {
                 console.error('Error loading detection model:', error);
+                showError("Error loading AI model");
                 statusText.textContent = "Error loading AI model";
                 return false;
             }
@@ -270,6 +294,7 @@
                 
             } catch (error) {
                 console.error('Detection error:', error);
+                showError("Object detection failed");
                 statusText.textContent = "Detection failed";
             } finally {
                 isDetecting = false;
@@ -308,6 +333,7 @@
                 console.error('Speech recognition error:', event.error);
                 isListening = false;
                 micButton.classList.remove('mic-active');
+                showError("Speech recognition error");
                 statusText.textContent = "Error listening";
             };
         }
@@ -342,6 +368,7 @@
                 
             } catch (error) {
                 console.error('Error accessing camera:', error);
+                showError("Camera access denied");
                 statusText.textContent = "Camera access denied";
             }
         }
@@ -351,9 +378,15 @@
             startCamera(usingFrontCamera);
         }
         
-        // Hugging Face API
+        // Hugging Face API with Better Error Handling
         async function queryDeepSeekTextOnly(prompt) {
             try {
+                console.log("Sending request to Hugging Face API...");
+                
+                // Add timeout to prevent hanging requests
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                
                 const response = await fetch(`https://api-inference.huggingface.co/models/${MODEL}`, {
                     method: "POST",
                     headers: {
@@ -367,11 +400,25 @@
                             temperature: 0.7,
                             do_sample: true
                         }
-                    })
+                    }),
+                    signal: controller.signal
                 });
 
+                clearTimeout(timeoutId);
+
                 if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
+                    const errorData = await response.text();
+                    console.error('API Response Error:', errorData);
+                    
+                    if (response.status === 503) {
+                        throw new Error("Model is loading, please try again in a few seconds");
+                    } else if (response.status === 429) {
+                        throw new Error("Too many requests, please wait a moment");
+                    } else if (response.status === 401) {
+                        throw new Error("API token invalid");
+                    } else {
+                        throw new Error(`API error: ${response.status} ${response.statusText}`);
+                    }
                 }
 
                 const result = await response.json();
@@ -389,10 +436,20 @@
                     generatedText = "I received your message but didn't generate a proper response.";
                 }
 
+                // Reset retry count on successful request
+                apiRetryCount = 0;
                 return generatedText;
 
             } catch (error) {
                 console.error('Hugging Face API error:', error);
+                
+                // Increment retry count
+                apiRetryCount++;
+                
+                if (apiRetryCount >= MAX_RETRIES) {
+                    throw new Error("AI service is temporarily unavailable. Please try again later.");
+                }
+                
                 throw error;
             }
         }
@@ -435,6 +492,7 @@
                 utterance.onerror = (event) => {
                     console.error('Speech synthesis error:', event);
                     isAISpeaking = false;
+                    showError("Speech synthesis failed");
                     statusText.textContent = "Speech error";
                     resolve();
                 };
@@ -442,34 +500,77 @@
                 speechSynthesis.speak(utterance);
             });
         }
+
+        // Fallback responses when API fails
+        function getFallbackResponse(userText, detectedObjects = []) {
+            const lowerText = userText.toLowerCase();
+            
+            // Greeting responses
+            if (lowerText.includes('hello') || lowerText.includes('hi') || lowerText.includes('hey')) {
+                return "Hello! I'm your AI assistant. How can I help you today?";
+            }
+            
+            // Vision-related responses
+            if (lowerText.includes('see') || lowerText.includes('detect') || lowerText.includes('what') && lowerText.includes('object')) {
+                if (detectedObjects.length > 0) {
+                    const objects = detectedObjects.map(obj => obj.class).join(', ');
+                    return `I can see: ${objects}. What would you like to know about these objects?`;
+                } else {
+                    return "I don't see any objects clearly at the moment. Try moving the camera or improving the lighting.";
+                }
+            }
+            
+            // Time-related
+            if (lowerText.includes('time')) {
+                return `The current time is ${new Date().toLocaleTimeString()}`;
+            }
+            
+            // Default fallback
+            return "I understand you're asking something, but I'm having trouble connecting to my AI service right now. Please try again in a moment.";
+        }
         
-        // Command Handling
+        // Command Handling with Robust Error Handling
         async function handleUserSpeech(text) {
             try {
                 statusText.textContent = "Processing...";
                 
                 let response;
-                if (text.toLowerCase().includes('what can you see') || 
-                    text.toLowerCase().includes('detect') ||
-                    text.toLowerCase().includes('what\'s in front')) {
-                    // Use vision-enhanced response
-                    response = await queryWithVisionContext(text);
-                } else {
-                    // Regular response
-                    response = await queryDeepSeekTextOnly(text);
+                let detectedObjects = [];
+                
+                // Always detect objects for context
+                if (isCameraActive && detectionModel) {
+                    detectedObjects = await detectObjects() || [];
+                }
+                
+                try {
+                    if (text.toLowerCase().includes('what can you see') || 
+                        text.toLowerCase().includes('detect') ||
+                        text.toLowerCase().includes('what\'s in front')) {
+                        response = await queryWithVisionContext(text);
+                    } else {
+                        response = await queryDeepSeekTextOnly(text);
+                    }
+                } catch (apiError) {
+                    console.log('API failed, using fallback response');
+                    response = getFallbackResponse(text, detectedObjects);
                 }
                 
                 await speakAI(response);
                 
             } catch (error) {
                 console.error('Error processing speech:', error);
-                await speakAI("I'm sorry, I'm having trouble processing your request right now.");
+                const fallback = getFallbackResponse(text);
+                await speakAI(fallback);
             }
         }
         
         // Event Listeners
         micButton.addEventListener('click', () => {
             if (!isListening && !isAISpeaking) {
+                if (!SpeechRecognition) {
+                    showError("Speech recognition not supported in this browser");
+                    return;
+                }
                 recognition.start();
             }
         });
@@ -487,9 +588,24 @@
         
         // Initialize
         window.addEventListener('load', async () => {
-            await loadDetectionModel();
-            await startCamera(false);
-            statusText.textContent = "Ready! Tap mic to speak or eye to detect objects";
+            try {
+                await loadDetectionModel();
+                await startCamera(false);
+                statusText.textContent = "Ready! Tap mic to speak or eye to detect objects";
+            } catch (error) {
+                showError("Failed to initialize application");
+                statusText.textContent = "Initialization failed";
+            }
+        });
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                speechSynthesis.cancel();
+                if (recognition && isListening) {
+                    recognition.stop();
+                }
+            }
         });
     </script>
 </body>
