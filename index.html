@@ -76,33 +76,6 @@
             }
         }
         
-        .detection-box {
-            position: absolute;
-            border: 2px solid #00ff88;
-            background: rgba(0, 255, 136, 0.1);
-            pointer-events: none;
-        }
-        
-        .detection-label {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 2px 6px;
-            font-size: 12px;
-            border-radius: 4px;
-            pointer-events: none;
-        }
-
-        .error-message {
-            background: rgba(255, 0, 0, 0.2);
-            border: 1px solid rgba(255, 0, 0, 0.5);
-        }
-
-        .success-message {
-            background: rgba(0, 255, 0, 0.2);
-            border: 1px solid rgba(0, 255, 0, 0.5);
-        }
-
         .scrollable-container {
             max-height: 80vh;
             overflow-y: auto;
@@ -126,6 +99,66 @@
         .scrollable-container::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.5);
         }
+
+        .error-message {
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid rgba(255, 0, 0, 0.5);
+        }
+
+        .success-message {
+            background: rgba(0, 255, 0, 0.2);
+            border: 1px solid rgba(0, 255, 0, 0.5);
+        }
+
+        .image-preview {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
+        .read-more-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #00ff88;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+        .full-conversation {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 5px;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .camera-switch-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+        }
     </style>
 </head>
 <body class="flex flex-col items-center min-h-screen text-white p-4 py-8">
@@ -139,7 +172,7 @@
                 </div>
                 <div class="ml-3">
                     <h1 class="text-lg font-bold">Vision Assistant</h1>
-                    <p class="text-xs opacity-80">Gemini 2.5 Pro + Object Detection</p>
+                    <p class="text-xs opacity-80">Gemini AI + Camera Vision</p>
                 </div>
             </div>
             
@@ -157,22 +190,21 @@
                     <video id="cameraView" autoplay playsinline class="w-full h-full object-cover"></video>
                     <canvas id="detectionCanvas" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
                     
+                    <!-- Camera Switch Button -->
+                    <button id="cameraSwitchBtn" class="camera-switch-btn">
+                        <i class="fas fa-camera-rotate"></i>
+                    </button>
+                    
                     <!-- Camera overlay -->
                     <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                        <p class="text-center text-sm" id="cameraStatus">Camera ready for object detection</p>
+                        <p class="text-center text-sm" id="cameraStatus">Camera ready - Show objects to analyze</p>
                     </div>
                 </div>
             </div>
             
-            <!-- Detection Results -->
-            <div id="detectionResults" class="glassmorphism p-3 rounded-xl hidden">
-                <h3 class="text-sm font-bold mb-2">Detected Objects:</h3>
-                <div id="objectsList" class="text-xs"></div>
-            </div>
-
             <!-- API Status -->
             <div id="apiStatus" class="success-message p-3 rounded-xl">
-                <p class="text-sm">🔗 Testing Gemini 2.5 Pro API...</p>
+                <p class="text-sm">🔗 Connected to Gemini 2.0 Flash</p>
             </div>
 
             <!-- Error Display -->
@@ -186,20 +218,29 @@
                 <p id="userSpeechText" class="text-sm mt-2 opacity-80 min-h-[20px]"></p>
             </div>
 
+            <!-- Generated Image Preview -->
+            <div id="imagePreviewContainer" class="glassmorphism p-4 rounded-xl hidden">
+                <h3 class="text-sm font-bold mb-2">🖼️ Generated Image</h3>
+                <img id="generatedImage" class="image-preview" alt="AI Generated Image">
+                <button id="downloadImageBtn" class="download-btn">
+                    <i class="fas fa-download"></i> Download Image
+                </button>
+            </div>
+
             <!-- Conversation History -->
-            <div id="conversationHistory" class="glassmorphism p-4 rounded-xl hidden">
-                <h3 class="text-sm font-bold mb-2">Recent Conversation:</h3>
-                <div id="conversationList" class="text-xs space-y-2 max-h-32 overflow-y-auto"></div>
+            <div id="conversationHistory" class="glassmorphism p-4 rounded-xl">
+                <h3 class="text-sm font-bold mb-2">💬 Recent Conversation</h3>
+                <div id="conversationList" class="text-xs space-y-2 max-h-40 overflow-y-auto"></div>
             </div>
 
             <!-- Instructions -->
             <div class="glassmorphism p-4 rounded-xl">
                 <h3 class="text-sm font-bold mb-2">💡 How to use:</h3>
                 <ul class="text-xs space-y-1 opacity-80">
-                    <li>• Tap <span class="text-cyan-400">🎤 Mic</span> to speak with AI</li>
-                    <li>• Tap <span class="text-cyan-400">📷 Camera</span> to switch cameras</li>
-                    <li>• Tap <span class="text-cyan-400">👁️ Eye</span> for object detection</li>
-                    <li>• Ask "what can you see?" for vision analysis</li>
+                    <li>• <span class="text-cyan-400">Show objects</span> to camera and ask questions</li>
+                    <li>• <span class="text-cyan-400">"Guess my cat's age"</span> - AI will analyze camera</li>
+                    <li>• <span class="text-cyan-400">"Generate elephant image"</span> - Creates AI art</li>
+                    <li>• <span class="text-cyan-400">Switch camera</span> using top-right button</li>
                 </ul>
             </div>
         </div>
@@ -214,8 +255,8 @@
                 <i class="fas fa-microphone text-white text-2xl"></i>
             </button>
             
-            <button id="detectButton" class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center transition-all duration-300 hover:bg-opacity-30">
-                <i class="fas fa-eye text-white text-xl"></i>
+            <button id="analyzeButton" class="w-14 h-14 rounded-full bg-white bg-opacity-20 flex items-center justify-center transition-all duration-300 hover:bg-opacity-30">
+                <i class="fas fa-search text-white text-xl"></i>
             </button>
         </div>
     </div>
@@ -224,20 +265,22 @@
         // DOM Elements
         const micButton = document.getElementById('micButton');
         const cameraButton = document.getElementById('cameraButton');
-        const detectButton = document.getElementById('detectButton');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const cameraSwitchBtn = document.getElementById('cameraSwitchBtn');
         const cameraView = document.getElementById('cameraView');
         const detectionCanvas = document.getElementById('detectionCanvas');
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
         const userSpeechText = document.getElementById('userSpeechText');
-        const detectionResults = document.getElementById('detectionResults');
-        const objectsList = document.getElementById('objectsList');
         const cameraStatus = document.getElementById('cameraStatus');
         const errorDisplay = document.getElementById('errorDisplay');
         const errorText = document.getElementById('errorText');
         const apiStatus = document.getElementById('apiStatus');
         const conversationHistory = document.getElementById('conversationHistory');
         const conversationList = document.getElementById('conversationList');
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+        const generatedImage = document.getElementById('generatedImage');
+        const downloadImageBtn = document.getElementById('downloadImageBtn');
         
         // App State
         let isListening = false;
@@ -246,27 +289,13 @@
         let stream = null;
         let isAISpeaking = false;
         let detectionModel = null;
-        let isDetecting = false;
         let conversation = [];
+        let currentGeneratedImage = null;
         
-        // Google Gemini API Configuration - CORRECTED MODEL
+        // Google Gemini API Configuration
         const GEMINI_API_KEY = "AIzaSyCAeedrWW42idbmY_6ad7YnWRe9dMgvPDY";
-        
-        // Try different model names since Gemini 2.5 Pro might have different naming
-        const GEMINI_MODELS = [
-            "gemini-2.0-flash",  // Most likely available
-            "gemini-2.0-flash-exp", 
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-pro"
-        ];
-        
+        const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"];
         let currentModelIndex = 0;
-        
-        function getCurrentModelAPIUrl() {
-            const model = GEMINI_MODELS[currentModelIndex];
-            return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-        }
         
         // Show error message
         function showError(message) {
@@ -290,11 +319,19 @@
             apiStatus.innerHTML = `<p class="text-sm">${message}</p>`;
         }
 
-        // Add to conversation history
-        function addToConversation(userMessage, aiMessage) {
+        // Add to conversation history with Read More feature
+        function addToConversation(userMessage, aiMessage, imageData = null) {
+            const conversationId = Date.now();
+            const shortMessage = aiMessage.length > 100 ? aiMessage.substring(0, 100) + '...' : aiMessage;
+            const hasReadMore = aiMessage.length > 100;
+            
             conversation.push({
+                id: conversationId,
                 user: userMessage,
                 ai: aiMessage,
+                shortMessage: shortMessage,
+                hasReadMore: hasReadMore,
+                imageData: imageData,
                 timestamp: new Date().toLocaleTimeString()
             });
             
@@ -303,127 +340,86 @@
                 conversation.shift();
             }
             
-            // Update UI
-            conversationList.innerHTML = conversation.map(conv => 
-                `<div class="border-b border-white/20 pb-2">
-                    <div class="text-cyan-300">You (${conv.timestamp}): ${conv.user}</div>
-                    <div class="text-green-300">AI: ${conv.ai.substring(0, 80)}${conv.ai.length > 80 ? '...' : ''}</div>
-                </div>`
-            ).join('');
-            
-            conversationHistory.classList.remove('hidden');
+            updateConversationUI();
+        }
+
+        // Update conversation UI
+        function updateConversationUI() {
+            conversationList.innerHTML = conversation.map(conv => {
+                let content = `
+                    <div class="border-b border-white/20 pb-2">
+                        <div class="text-cyan-300 text-xs mb-1">
+                            <strong>You (${conv.timestamp}):</strong> ${conv.user}
+                        </div>
+                        <div class="text-green-300 text-xs">
+                            <strong>AI:</strong> ${conv.shortMessage}
+                            ${conv.hasReadMore ? 
+                                `<button onclick="toggleReadMore(${conv.id})" class="read-more-btn">Read More</button>` : 
+                                ''
+                            }
+                        </div>
+                        ${conv.imageData ? 
+                            `<div class="mt-2">
+                                <img src="${conv.imageData}" class="w-20 h-20 rounded object-cover border border-white/20">
+                                <button onclick="viewFullImage('${conv.imageData}')" class="read-more-btn mt-1">View Full</button>
+                            </div>` : 
+                            ''
+                        }
+                        <div id="fullText-${conv.id}" class="full-conversation hidden">
+                            ${conv.ai}
+                        </div>
+                    </div>
+                `;
+                return content;
+            }).join('');
+        }
+
+        // Toggle read more
+        function toggleReadMore(convId) {
+            const fullTextElement = document.getElementById(`fullText-${convId}`);
+            fullTextElement.classList.toggle('hidden');
+        }
+
+        // View full image
+        function viewFullImage(imageUrl) {
+            generatedImage.src = imageUrl;
+            imagePreviewContainer.classList.remove('hidden');
+            currentGeneratedImage = imageUrl;
         }
 
         // TensorFlow.js Model Loading
         async function loadDetectionModel() {
             try {
                 statusText.textContent = "Loading AI vision model...";
-                cameraStatus.textContent = "Loading object detection...";
-                
                 detectionModel = await cocoSsd.load();
-                
-                statusText.textContent = "AI vision model loaded!";
-                cameraStatus.textContent = "Ready for object detection";
-                showSuccess("Object detection model loaded successfully");
-                console.log("COCO-SSD model loaded successfully");
+                showSuccess("Vision model loaded successfully");
                 return true;
             } catch (error) {
                 console.error('Error loading detection model:', error);
-                showError("Error loading AI vision model");
-                statusText.textContent = "Vision model failed to load";
-                cameraStatus.textContent = "Object detection unavailable";
+                showError("Vision model failed to load");
                 return false;
             }
         }
         
-        // Object Detection
-        async function detectObjects() {
-            if (!detectionModel) {
-                showError("AI vision model not loaded yet");
-                return [];
-            }
-            
-            if (!isCameraActive) {
-                showError("Camera not active");
-                return [];
-            }
-            
-            try {
-                isDetecting = true;
-                detectButton.style.background = 'rgba(0, 255, 136, 0.3)';
-                statusText.textContent = "Detecting objects...";
+        // Capture current camera frame and convert to base64
+        async function captureCameraFrame() {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
                 
-                const predictions = await detectionModel.detect(cameraView);
+                canvas.width = cameraView.videoWidth;
+                canvas.height = cameraView.videoHeight;
                 
-                // Clear previous detections
-                const ctx = detectionCanvas.getContext('2d');
-                ctx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+                ctx.drawImage(cameraView, 0, 0, canvas.width, canvas.height);
                 
-                // Set canvas size to match video
-                if (cameraView.videoWidth > 0) {
-                    detectionCanvas.width = cameraView.videoWidth;
-                    detectionCanvas.height = cameraView.videoHeight;
-                }
-                
-                let detectedObjects = [];
-                
-                // Draw detection boxes
-                predictions.forEach(prediction => {
-                    const [x, y, width, height] = prediction.bbox;
-                    const score = (prediction.score * 100).toFixed(1);
-                    
-                    if (score > 50) { // Only show high confidence detections
-                        // Draw bounding box
-                        ctx.strokeStyle = '#00ff88';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(x, y, width, height);
-                        
-                        // Draw label background
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                        const text = `${prediction.class} ${score}%`;
-                        const textWidth = ctx.measureText(text).width;
-                        ctx.fillRect(x, y - 20, textWidth + 10, 20);
-                        
-                        // Draw label text
-                        ctx.fillStyle = '#00ff88';
-                        ctx.font = '14px Arial';
-                        ctx.fillText(text, x + 5, y - 5);
-                        
-                        detectedObjects.push({
-                            class: prediction.class,
-                            score: score,
-                            confidence: prediction.score
-                        });
-                    }
-                });
-                
-                // Update detection results
-                if (detectedObjects.length > 0) {
-                    objectsList.innerHTML = detectedObjects.map(obj => 
-                        `<div class="flex justify-between mb-1">
-                            <span>${obj.class}</span>
-                            <span class="text-green-400">${obj.score}%</span>
-                        </div>`
-                    ).join('');
-                    detectionResults.classList.remove('hidden');
-                    cameraStatus.textContent = `Detected ${detectedObjects.length} objects`;
-                } else {
-                    detectionResults.classList.add('hidden');
-                    cameraStatus.textContent = "No objects detected";
-                }
-                
-                statusText.textContent = `Found ${detectedObjects.length} objects`;
-                return detectedObjects;
-                
-            } catch (error) {
-                console.error('Detection error:', error);
-                showError("Object detection failed");
-                statusText.textContent = "Detection failed";
-                return [];
-            } finally {
-                isDetecting = false;
-                detectButton.style.background = '';
-            }
+                canvas.toBlob((blob) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        resolve(reader.result); // base64 data URL
+                    };
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+            });
         }
         
         // Speech Recognition
@@ -462,7 +458,7 @@
             };
         }
         
-        // Camera Management
+        // Camera Management - FIXED FRONT CAMERA
         async function startCamera(front = false) {
             try {
                 if (stream) {
@@ -472,7 +468,8 @@
                 const constraints = {
                     video: { 
                         facingMode: front ? "user" : "environment",
-                        aspectRatio: 3/4
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     },
                     audio: false
                 };
@@ -487,15 +484,13 @@
                     detectionCanvas.height = cameraView.videoHeight;
                 };
                 
-                statusText.textContent = "Camera active";
-                cameraStatus.textContent = "Ready for object detection";
-                showSuccess("Camera activated successfully");
+                cameraStatus.textContent = front ? "Front camera active" : "Back camera active";
+                showSuccess(`Camera activated (${front ? 'Front' : 'Back'})`);
                 
             } catch (error) {
                 console.error('Error accessing camera:', error);
                 showError("Camera access denied - please allow camera permissions");
                 statusText.textContent = "Camera access denied";
-                cameraStatus.textContent = "Camera not available";
             }
         }
         
@@ -504,38 +499,43 @@
             startCamera(usingFrontCamera);
         }
         
-        // Google Gemini API with model fallback
-        async function queryGeminiAPI(prompt, visionContext = "") {
+        // Google Gemini API with Vision
+        async function queryGeminiAPI(prompt, includeCameraImage = false) {
             let lastError = null;
             
-            // Try all available models
             for (let i = currentModelIndex; i < GEMINI_MODELS.length; i++) {
                 const model = GEMINI_MODELS[i];
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
                 
                 try {
-                    console.log(`Trying model: ${model}`);
-                    updateAPIStatus(`🔄 Trying ${model}...`);
-                    
-                    let fullPrompt = prompt;
-                    if (visionContext) {
-                        fullPrompt = `Based on what I can see: ${visionContext}. ${prompt}`;
-                    }
-                    
-                    const requestBody = {
+                    let requestBody = {
                         contents: [{
-                            parts: [{
-                                text: `You are a helpful AI assistant with computer vision capabilities. Respond in a friendly, conversational manner. Keep responses concise but helpful.
-
-${fullPrompt}`
-                            }]
+                            parts: []
                         }],
                         generationConfig: {
                             temperature: 0.7,
-                            maxOutputTokens: 500,
+                            maxOutputTokens: 1000,
                         }
                     };
-                    
+
+                    // Add image data if requested
+                    if (includeCameraImage && isCameraActive) {
+                        const imageData = await captureCameraFrame();
+                        requestBody.contents[0].parts.push({
+                            inline_data: {
+                                mime_type: "image/jpeg",
+                                data: imageData.split(',')[1] // Remove data:image/jpeg;base64, prefix
+                            }
+                        });
+                    }
+
+                    // Add text prompt
+                    requestBody.contents[0].parts.push({
+                        text: `You are a helpful AI assistant with vision capabilities. 
+                        ${includeCameraImage ? "I'm providing a live camera image. " : ""}
+                        Please analyze and respond helpfully to: ${prompt}`
+                    });
+
                     const response = await fetch(apiUrl, {
                         method: "POST",
                         headers: {
@@ -556,22 +556,41 @@ ${fullPrompt}`
                     }
 
                     const generatedText = result.candidates[0].content.parts[0].text;
-                    console.log(`Success with model: ${model}`, generatedText);
                     
-                    // Update current model index for next requests
                     currentModelIndex = i;
-                    showSuccess(`Connected to ${model} successfully!`);
                     return generatedText;
 
                 } catch (error) {
                     console.log(`Model ${model} failed:`, error.message);
                     lastError = error;
-                    continue; // Try next model
+                    continue;
                 }
             }
             
-            // If all models failed
             throw new Error(`All models failed. Last error: ${lastError?.message}`);
+        }
+
+        // Generate Image with AI
+        async function generateImageWithAI(prompt) {
+            try {
+                // Using a free image generation API (replace with your preferred service)
+                const response = await fetch('https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt), {
+                    method: 'GET'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Image generation failed');
+                }
+
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                return imageUrl;
+
+            } catch (error) {
+                console.error('Image generation error:', error);
+                // Fallback: Use a placeholder service
+                return `https://via.placeholder.com/512/667eea/ffffff?text=${encodeURIComponent(prompt)}`;
+            }
         }
         
         // Text-to-Speech
@@ -580,7 +599,6 @@ ${fullPrompt}`
                 isAISpeaking = true;
                 statusText.textContent = "AI is speaking...";
                 
-                // Cancel any ongoing speech
                 window.speechSynthesis.cancel();
                 
                 const utterance = new SpeechSynthesisUtterance(text);
@@ -597,87 +615,87 @@ ${fullPrompt}`
                 utterance.onerror = (event) => {
                     console.error('Speech synthesis error:', event);
                     isAISpeaking = false;
-                    showError("Speech synthesis failed");
                     statusText.textContent = "Speech error";
                     resolve();
                 };
                 
-                // Wait a moment before speaking
                 setTimeout(() => {
                     window.speechSynthesis.speak(utterance);
                 }, 100);
             });
         }
-
-        // Fallback responses when API fails
-        function getFallbackResponse(userText, detectedObjects = []) {
-            const lowerText = userText.toLowerCase();
-            
-            if (lowerText.includes('hello') || lowerText.includes('hi')) {
-                return "Hello! I'm your AI assistant. How can I help you today?";
-            }
-            
-            if ((lowerText.includes('see') || lowerText.includes('detect') || lowerText.includes('what') && lowerText.includes('object'))) {
-                if (detectedObjects.length > 0) {
-                    const objects = detectedObjects.map(obj => obj.class).join(', ');
-                    return `I can detect: ${objects}. This is based on my computer vision analysis. What would you like to know about these objects?`;
-                } else {
-                    return "I don't see any objects clearly right now. Make sure the camera is pointing at objects with good lighting.";
-                }
-            }
-            
-            if (lowerText.includes('time')) {
-                return `The current time is ${new Date().toLocaleTimeString()}`;
-            }
-            
-            if (lowerText.includes('thank')) {
-                return "You're welcome! Is there anything else I can help you with?";
-            }
-            
-            return "I understand you're asking something, but I'm having temporary connection issues. Please try again in a moment.";
-        }
         
-        // Command Handling
+        // Command Handling with Camera Vision
         async function handleUserSpeech(text) {
             try {
                 statusText.textContent = "Processing with Gemini AI...";
                 
                 let response;
-                let detectedObjects = [];
-                let visionContext = "";
+                let generatedImageUrl = null;
+                let includeCameraImage = false;
                 
-                // Detect objects if vision-related query
-                if (text.toLowerCase().includes('see') || 
-                    text.toLowerCase().includes('detect') || 
-                    text.toLowerCase().includes('what') && text.toLowerCase().includes('object') ||
-                    text.toLowerCase().includes('vision')) {
-                    
-                    detectedObjects = await detectObjects();
-                    if (detectedObjects.length > 0) {
-                        visionContext = `I can see: ${detectedObjects.map(obj => obj.class).join(', ')}`;
-                    } else {
-                        visionContext = "I don't see any objects clearly";
-                    }
+                // Check if we need to analyze camera image
+                if (text.toLowerCase().includes('age') || 
+                    text.toLowerCase().includes('guess') ||
+                    text.toLowerCase().includes('what is this') ||
+                    text.toLowerCase().includes('analyze') ||
+                    text.toLowerCase().includes('see') && isCameraActive) {
+                    includeCameraImage = true;
+                    cameraStatus.textContent = "📸 Analyzing camera image...";
                 }
                 
-                try {
-                    response = await queryGeminiAPI(text, visionContext);
-                } catch (apiError) {
-                    console.log('Gemini API failed, using fallback:', apiError);
-                    response = getFallbackResponse(text, detectedObjects);
+                // Check if we need to generate image
+                if (text.toLowerCase().includes('generate') || 
+                    text.toLowerCase().includes('create') || 
+                    text.toLowerCase().includes('image of') ||
+                    text.toLowerCase().includes('draw')) {
+                    
+                    cameraStatus.textContent = "🎨 Generating image...";
+                    generatedImageUrl = await generateImageWithAI(text);
+                    response = `I've generated an image based on your request: "${text}". You can view and download it below.`;
+                    
+                } else {
+                    // Regular text response with optional camera vision
+                    response = await queryGeminiAPI(text, includeCameraImage);
                 }
                 
                 // Add to conversation history
-                addToConversation(text, response);
+                addToConversation(text, response, generatedImageUrl);
+                
+                // Show image if generated
+                if (generatedImageUrl) {
+                    generatedImage.src = generatedImageUrl;
+                    imagePreviewContainer.classList.remove('hidden');
+                    currentGeneratedImage = generatedImageUrl;
+                }
                 
                 // Speak the response
                 await speakAI(response);
+                cameraStatus.textContent = "Camera ready - Show objects to analyze";
                 
             } catch (error) {
                 console.error('Error processing speech:', error);
-                const fallback = getFallbackResponse(text);
+                const fallback = "I'm having trouble processing your request. Please try again.";
                 addToConversation(text, fallback);
                 await speakAI(fallback);
+                cameraStatus.textContent = "Camera ready";
+            }
+        }
+
+        // Analyze current camera frame
+        async function analyzeCamera() {
+            if (!isCameraActive) {
+                showError("Camera not active");
+                return;
+            }
+            
+            try {
+                statusText.textContent = "Analyzing camera image...";
+                const response = await queryGeminiAPI("Describe what you see in this image in detail", true);
+                addToConversation("Analyze what you see", response);
+                await speakAI(response);
+            } catch (error) {
+                showError("Analysis failed");
             }
         }
         
@@ -685,55 +703,54 @@ ${fullPrompt}`
         micButton.addEventListener('click', () => {
             if (!isListening && !isAISpeaking) {
                 if (!SpeechRecognition) {
-                    showError("Speech recognition not supported in this browser");
+                    showError("Speech recognition not supported");
                     return;
                 }
                 recognition.start();
             }
         });
         
-        cameraButton.addEventListener('click', switchCamera);
-        
-        detectButton.addEventListener('click', async () => {
-            const objects = await detectObjects();
-            if (objects.length > 0) {
-                showSuccess(`Detected ${objects.length} objects`);
+        cameraButton.addEventListener('click', () => {
+            if (!isCameraActive) {
+                startCamera(false);
             }
         });
         
-        // Auto-detect every 5 seconds when camera is active
-        setInterval(() => {
-            if (isCameraActive && detectionModel && !isDetecting) {
-                detectObjects();
+        cameraSwitchBtn.addEventListener('click', switchCamera);
+        
+        analyzeButton.addEventListener('click', analyzeCamera);
+        
+        downloadImageBtn.addEventListener('click', () => {
+            if (currentGeneratedImage) {
+                const link = document.createElement('a');
+                link.href = currentGeneratedImage;
+                link.download = 'ai-generated-image.jpg';
+                link.click();
             }
-        }, 5000);
+        });
         
         // Initialize everything
         window.addEventListener('load', async () => {
             try {
                 statusText.textContent = "Initializing AI Assistant...";
-                updateAPIStatus("🔄 Testing Gemini models...");
                 
-                // Load TensorFlow model
                 await loadDetectionModel();
-                
-                // Start camera
                 await startCamera(false);
                 
-                // Test Gemini API connection with first model
+                // Test API connection
                 try {
-                    const testResponse = await queryGeminiAPI("Hello, please respond with 'API is working'");
+                    await queryGeminiAPI("Hello");
                     showSuccess("Gemini AI connected successfully!");
-                    statusText.textContent = "Ready! Tap mic to speak with AI";
+                    statusText.textContent = "Ready! Show objects to camera and ask questions";
                 } catch (apiError) {
-                    showError("Gemini API connection issues - using fallback mode");
-                    statusText.textContent = "Ready (fallback mode) - Tap mic to speak";
+                    showError("Gemini API issues - using fallback mode");
+                    statusText.textContent = "Ready (fallback mode)";
                 }
                 
             } catch (error) {
                 console.error('Initialization error:', error);
                 showError("Failed to initialize application");
-                statusText.textContent = "Initialization failed - refresh page";
+                statusText.textContent = "Initialization failed";
             }
         });
 
@@ -746,6 +763,10 @@ ${fullPrompt}`
                 }
             }
         });
+
+        // Make functions global for HTML onclick
+        window.toggleReadMore = toggleReadMore;
+        window.viewFullImage = viewFullImage;
     </script>
 </body>
 </html>
