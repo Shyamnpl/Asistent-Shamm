@@ -56,6 +56,11 @@
             background: rgba(255, 215, 0, 0.3);
         }
         
+        .mic-ignoring {
+            animation: ignoringGlow 2s infinite;
+            background: rgba(255, 100, 0, 0.3);
+        }
+        
         @keyframes pulse {
             0% { 
                 box-shadow: 0 0 0 0 rgba(0, 255, 180, 0.6); 
@@ -76,6 +81,17 @@
             50% { 
                 box-shadow: 0 0 0 15px rgba(255, 215, 0, 0.3);
                 transform: scale(1.05);
+            }
+        }
+        
+        @keyframes ignoringGlow {
+            0%, 100% { 
+                box-shadow: 0 0 0 0 rgba(255, 100, 0, 0.6);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 0 15px rgba(255, 100, 0, 0.3);
+                transform: scale(1.02);
             }
         }
         
@@ -124,6 +140,11 @@
         .success-message {
             background: rgba(0, 255, 0, 0.2);
             border: 1px solid rgba(0, 255, 0, 0.5);
+        }
+
+        .warning-message {
+            background: rgba(255, 165, 0, 0.2);
+            border: 1px solid rgba(255, 165, 0, 0.5);
         }
 
         .image-preview {
@@ -188,6 +209,19 @@
             font-size: 12px;
             animation: pulse 2s infinite;
         }
+
+        .ignoring-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 100, 0, 0.8);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            animation: pulse 2s infinite;
+        }
     </style>
 </head>
 <body class="flex flex-col items-center min-h-screen text-white p-4 py-8">
@@ -201,7 +235,7 @@
                 </div>
                 <div class="ml-3">
                     <h1 class="text-lg font-bold">Vision Assistant</h1>
-                    <p class="text-xs opacity-80">Gemini AI + Camera Vision</p>
+                    <p class="text-xs opacity-80">Smart Listening Mode</p>
                 </div>
             </div>
             
@@ -226,11 +260,16 @@
                     
                     <!-- Listening Indicator -->
                     <div id="listeningIndicator" class="listening-indicator hidden">
-                        🎤 Listening... Speak now
+                        🎤 Listening for your voice...
+                    </div>
+                    
+                    <!-- Ignoring Indicator -->
+                    <div id="ignoringIndicator" class="ignoring-indicator hidden">
+                        🔇 Ignoring AI sounds...
                     </div>
                     
                     <!-- Camera overlay -->
-                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                    <div class="absolute bottom- 0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
                         <p class="text-center text-sm" id="cameraStatus">Camera ready - Show objects and ask questions</p>
                     </div>
                 </div>
@@ -239,6 +278,11 @@
             <!-- API Status -->
             <div id="apiStatus" class="success-message p-3 rounded-xl">
                 <p class="text-sm">🔗 Connected to Gemini 2.0 Flash</p>
+            </div>
+
+            <!-- Warning Message -->
+            <div id="warningDisplay" class="warning-message p-3 rounded-xl hidden">
+                <p id="warningText" class="text-sm"></p>
             </div>
 
             <!-- Error Display -->
@@ -269,12 +313,12 @@
 
             <!-- Instructions -->
             <div class="glassmorphism p-4 rounded-xl">
-                <h3 class="text-sm font-bold mb-2">💡 How to use:</h3>
+                <h3 class="text-sm font-bold mb-2">💡 Smart Listening Mode:</h3>
                 <ul class="text-xs space-y-1 opacity-80">
-                    <li>• <span class="text-cyan-400">Tap mic once</span> - Continuous listening mode</li>
-                    <li>• <span class="text-cyan-400">Ask anything about camera view</span> - Auto image capture</li>
-                    <li>• <span class="text-cyan-400">"What do you see?"</span> - Gemini analyzes camera</li>
-                    <li>• <span class="text-cyan-400">Mic auto-stops</span> after 1 minute of silence</li>
+                    <li>• <span class="text-cyan-400">Ignores AI voice</span> - No echo bugs</li>
+                    <li>• <span class="text-cyan-400">Only hears you</span> - System sounds ignored</li>
+                    <li>• <span class="text-cyan-400">Auto image capture</span> for vision questions</li>
+                    <li>• <span class="text-cyan-400">Continuous listening</span> with 1min timeout</li>
                 </ul>
             </div>
         </div>
@@ -309,6 +353,8 @@
         const cameraStatus = document.getElementById('cameraStatus');
         const errorDisplay = document.getElementById('errorDisplay');
         const errorText = document.getElementById('errorText');
+        const warningDisplay = document.getElementById('warningDisplay');
+        const warningText = document.getElementById('warningText');
         const apiStatus = document.getElementById('apiStatus');
         const conversationHistory = document.getElementById('conversationHistory');
         const conversationList = document.getElementById('conversationList');
@@ -316,9 +362,11 @@
         const generatedImage = document.getElementById('generatedImage');
         const downloadImageBtn = document.getElementById('downloadImageBtn');
         const listeningIndicator = document.getElementById('listeningIndicator');
+        const ignoringIndicator = document.getElementById('ignoringIndicator');
         
         // App State
         let isListening = false;
+        let isIgnoringSystemSounds = false;
         let isCameraActive = false;
         let usingFrontCamera = false;
         let stream = null;
@@ -327,7 +375,9 @@
         let conversation = [];
         let currentGeneratedImage = null;
         let silenceTimeout = null;
+        let ignoreSystemTimeout = null;
         const SILENCE_TIMEOUT = 60000; // 1 minute
+        const SYSTEM_SOUND_IGNORE_TIME = 5000; // 5 seconds
         
         // Google Gemini API Configuration
         const GEMINI_API_KEY = "AIzaSyCAeedrWW42idbmY_6ad7YnWRe9dMgvPDY";
@@ -342,7 +392,8 @@
             'hath', 'haath', 'hand', 'hands',
             'age', 'umar', 'guess', 'estimate',
             'describe', 'explain', 'analyze',
-            'yeh kya hai', 'yaha kya hai', 'idhar kya hai'
+            'yeh kya hai', 'yaha kya hai', 'idhar kya hai',
+            'abhi', 'currently', 'right now', 'at this moment'
         ];
         
         // Show error message
@@ -352,6 +403,15 @@
             setTimeout(() => {
                 errorDisplay.classList.add('hidden');
             }, 5000);
+        }
+
+        // Show warning message
+        function showWarning(message) {
+            warningText.textContent = message;
+            warningDisplay.classList.remove('hidden');
+            setTimeout(() => {
+                warningDisplay.classList.add('hidden');
+            }, 3000);
         }
 
         // Show success message
@@ -365,6 +425,31 @@
         // Update main status
         function updateMainStatus(message) {
             mainStatusText.textContent = message;
+        }
+
+        // Ignore system sounds for a period
+        function ignoreSystemSounds() {
+            isIgnoringSystemSounds = true;
+            micButton.classList.remove('mic-listening');
+            micButton.classList.add('mic-ignoring');
+            listeningIndicator.classList.add('hidden');
+            ignoringIndicator.classList.remove('hidden');
+            
+            showWarning("Ignoring system sounds for 5 seconds...");
+            
+            if (ignoreSystemTimeout) {
+                clearTimeout(ignoreSystemTimeout);
+            }
+            
+            ignoreSystemTimeout = setTimeout(() => {
+                isIgnoringSystemSounds = false;
+                micButton.classList.remove('mic-ignoring');
+                if (isListening) {
+                    micButton.classList.add('mic-listening');
+                    listeningIndicator.classList.remove('hidden');
+                }
+                ignoringIndicator.classList.add('hidden');
+            }, SYSTEM_SOUND_IGNORE_TIME);
         }
 
         // Reset silence timeout
@@ -490,26 +575,32 @@
             return VISION_KEYWORDS.some(keyword => lowerText.includes(keyword.toLowerCase()));
         }
         
-        // Speech Recognition with Continuous Listening
+        // Speech Recognition with Smart Listening
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition;
         
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
-            recognition.continuous = true; // CHANGED: Continuous listening
-            recognition.interimResults = true; // CHANGED: Get interim results
+            recognition.continuous = true;
+            recognition.interimResults = true;
             recognition.lang = 'en-US';
             
             recognition.onstart = () => {
                 isListening = true;
                 micButton.classList.add('mic-listening');
                 listeningIndicator.classList.remove('hidden');
-                updateMainStatus("🎤 Listening continuously...");
+                updateMainStatus("🎤 Listening for your voice...");
                 statusText.textContent = "Listening";
                 resetSilenceTimeout();
             };
             
             recognition.onresult = (event) => {
+                // Skip processing if ignoring system sounds
+                if (isIgnoringSystemSounds) {
+                    userSpeechText.textContent = "🔇 Ignoring system sounds...";
+                    return;
+                }
+                
                 // Reset silence timeout on any speech
                 resetSilenceTimeout();
                 
@@ -541,7 +632,6 @@
             recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
                 if (event.error === 'no-speech') {
-                    // This is normal for continuous listening
                     return;
                 }
                 stopListening();
@@ -551,7 +641,7 @@
             
             recognition.onend = () => {
                 // Auto-restart for continuous listening
-                if (isListening && !isAISpeaking) {
+                if (isListening && !isAISpeaking && !isIgnoringSystemSounds) {
                     setTimeout(() => {
                         if (isListening) {
                             recognition.start();
@@ -581,15 +671,20 @@
         function stopListening() {
             if (isListening) {
                 isListening = false;
+                isIgnoringSystemSounds = false;
                 recognition.stop();
-                micButton.classList.remove('mic-listening', 'mic-active');
+                micButton.classList.remove('mic-listening', 'mic-active', 'mic-ignoring');
                 listeningIndicator.classList.add('hidden');
+                ignoringIndicator.classList.add('hidden');
                 userSpeechText.textContent = "";
                 updateMainStatus("Tap mic to start conversation");
                 statusText.textContent = "Ready";
                 
                 if (silenceTimeout) {
                     clearTimeout(silenceTimeout);
+                }
+                if (ignoreSystemTimeout) {
+                    clearTimeout(ignoreSystemTimeout);
                 }
             }
         }
@@ -721,10 +816,13 @@
             }
         }
         
-        // Text-to-Speech with interrupt capability
+        // Text-to-Speech with System Sound Ignore
         function speakAI(text) {
             return new Promise((resolve) => {
                 isAISpeaking = true;
+                
+                // Start ignoring system sounds before speaking
+                ignoreSystemSounds();
                 
                 // Stop any ongoing speech
                 window.speechSynthesis.cancel();
@@ -735,14 +833,14 @@
                 utterance.volume = 1;
                 
                 utterance.onstart = () => {
-                    updateMainStatus("AI is speaking...");
-                    statusText.textContent = "Speaking";
+                    updateMainStatus("🤖 AI is speaking...");
+                    statusText.textContent = "AI Speaking";
                 };
                 
                 utterance.onend = () => {
                     isAISpeaking = false;
                     if (isListening) {
-                        updateMainStatus("🎤 Listening... Speak now");
+                        updateMainStatus("🎤 Listening for your voice...");
                         statusText.textContent = "Listening";
                     } else {
                         updateMainStatus("Tap mic to start conversation");
@@ -757,13 +855,6 @@
                     updateMainStatus("Speech error");
                     statusText.textContent = "Error";
                     resolve();
-                };
-                
-                // Add interrupt capability
-                utterance.onboundary = (event) => {
-                    if (!isAISpeaking) {
-                        window.speechSynthesis.cancel();
-                    }
                 };
                 
                 setTimeout(() => {
@@ -821,7 +912,7 @@
                     currentGeneratedImage = generatedImageUrl;
                 }
                 
-                // Speak the response
+                // Speak the response (this will trigger system sound ignore)
                 await speakAI(response);
                 cameraStatus.textContent = "Camera ready - Show objects and ask questions";
                 
