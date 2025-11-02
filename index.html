@@ -51,6 +51,11 @@
             background: rgba(0, 255, 180, 0.3);
         }
         
+        .mic-listening {
+            animation: listeningGlow 2s infinite;
+            background: rgba(255, 215, 0, 0.3);
+        }
+        
         @keyframes pulse {
             0% { 
                 box-shadow: 0 0 0 0 rgba(0, 255, 180, 0.6); 
@@ -60,6 +65,17 @@
             }
             100% { 
                 box-shadow: 0 0 0 0 rgba(0, 255, 180, 0); 
+            }
+        }
+        
+        @keyframes listeningGlow {
+            0%, 100% { 
+                box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.6);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 0 15px rgba(255, 215, 0, 0.3);
+                transform: scale(1.05);
             }
         }
         
@@ -159,6 +175,19 @@
             cursor: pointer;
             z-index: 10;
         }
+
+        .listening-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 215, 0, 0.8);
+            color: black;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            animation: pulse 2s infinite;
+        }
     </style>
 </head>
 <body class="flex flex-col items-center min-h-screen text-white p-4 py-8">
@@ -178,7 +207,7 @@
             
             <div id="statusIndicator" class="flex items-center bg-black bg-opacity-30 px-3 py-1 rounded-full">
                 <div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
-                <span class="text-xs">Ready</span>
+                <span class="text-xs" id="statusText">Ready</span>
             </div>
         </div>
         
@@ -195,9 +224,14 @@
                         <i class="fas fa-camera-rotate"></i>
                     </button>
                     
+                    <!-- Listening Indicator -->
+                    <div id="listeningIndicator" class="listening-indicator hidden">
+                        🎤 Listening... Speak now
+                    </div>
+                    
                     <!-- Camera overlay -->
                     <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                        <p class="text-center text-sm" id="cameraStatus">Camera ready - Show objects to analyze</p>
+                        <p class="text-center text-sm" id="cameraStatus">Camera ready - Show objects and ask questions</p>
                     </div>
                 </div>
             </div>
@@ -214,7 +248,7 @@
             
             <!-- Voice Status -->
             <div id="voiceStatus" class="glassmorphism p-4 text-center rounded-xl">
-                <p id="statusText" class="text-lg">Tap mic to speak with AI</p>
+                <p id="mainStatusText" class="text-lg">Tap mic to start conversation</p>
                 <p id="userSpeechText" class="text-sm mt-2 opacity-80 min-h-[20px]"></p>
             </div>
 
@@ -237,10 +271,10 @@
             <div class="glassmorphism p-4 rounded-xl">
                 <h3 class="text-sm font-bold mb-2">💡 How to use:</h3>
                 <ul class="text-xs space-y-1 opacity-80">
-                    <li>• <span class="text-cyan-400">Show objects</span> to camera and ask questions</li>
-                    <li>• <span class="text-cyan-400">"Guess my cat's age"</span> - AI will analyze camera</li>
-                    <li>• <span class="text-cyan-400">"Generate elephant image"</span> - Creates AI art</li>
-                    <li>• <span class="text-cyan-400">Switch camera</span> using top-right button</li>
+                    <li>• <span class="text-cyan-400">Tap mic once</span> - Continuous listening mode</li>
+                    <li>• <span class="text-cyan-400">Ask anything about camera view</span> - Auto image capture</li>
+                    <li>• <span class="text-cyan-400">"What do you see?"</span> - Gemini analyzes camera</li>
+                    <li>• <span class="text-cyan-400">Mic auto-stops</span> after 1 minute of silence</li>
                 </ul>
             </div>
         </div>
@@ -268,9 +302,9 @@
         const analyzeButton = document.getElementById('analyzeButton');
         const cameraSwitchBtn = document.getElementById('cameraSwitchBtn');
         const cameraView = document.getElementById('cameraView');
-        const detectionCanvas = document.getElementById('detectionCanvas');
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
+        const mainStatusText = document.getElementById('mainStatusText');
         const userSpeechText = document.getElementById('userSpeechText');
         const cameraStatus = document.getElementById('cameraStatus');
         const errorDisplay = document.getElementById('errorDisplay');
@@ -281,6 +315,7 @@
         const imagePreviewContainer = document.getElementById('imagePreviewContainer');
         const generatedImage = document.getElementById('generatedImage');
         const downloadImageBtn = document.getElementById('downloadImageBtn');
+        const listeningIndicator = document.getElementById('listeningIndicator');
         
         // App State
         let isListening = false;
@@ -291,11 +326,24 @@
         let detectionModel = null;
         let conversation = [];
         let currentGeneratedImage = null;
+        let silenceTimeout = null;
+        const SILENCE_TIMEOUT = 60000; // 1 minute
         
         // Google Gemini API Configuration
         const GEMINI_API_KEY = "AIzaSyCAeedrWW42idbmY_6ad7YnWRe9dMgvPDY";
         const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"];
         let currentModelIndex = 0;
+        
+        // Keywords that trigger camera image capture
+        const VISION_KEYWORDS = [
+            'see', 'look', 'watch', 'view', 'show', 'display',
+            'dekh', 'dikhai', 'dikhta', 'dikhti', 'dikhte',
+            'kya hai', 'what is', 'what are', 'what\'s this',
+            'hath', 'haath', 'hand', 'hands',
+            'age', 'umar', 'guess', 'estimate',
+            'describe', 'explain', 'analyze',
+            'yeh kya hai', 'yaha kya hai', 'idhar kya hai'
+        ];
         
         // Show error message
         function showError(message) {
@@ -314,9 +362,23 @@
             }, 3000);
         }
 
-        // Update API status
-        function updateAPIStatus(message) {
-            apiStatus.innerHTML = `<p class="text-sm">${message}</p>`;
+        // Update main status
+        function updateMainStatus(message) {
+            mainStatusText.textContent = message;
+        }
+
+        // Reset silence timeout
+        function resetSilenceTimeout() {
+            if (silenceTimeout) {
+                clearTimeout(silenceTimeout);
+            }
+            silenceTimeout = setTimeout(() => {
+                if (isListening && !isAISpeaking) {
+                    stopListening();
+                    updateMainStatus("Mic stopped due to inactivity");
+                    showSuccess("Listening stopped after 1 minute of silence");
+                }
+            }, SILENCE_TIMEOUT);
         }
 
         // Add to conversation history with Read More feature
@@ -390,7 +452,7 @@
         // TensorFlow.js Model Loading
         async function loadDetectionModel() {
             try {
-                statusText.textContent = "Loading AI vision model...";
+                updateMainStatus("Loading AI vision model...");
                 detectionModel = await cocoSsd.load();
                 showSuccess("Vision model loaded successfully");
                 return true;
@@ -422,43 +484,117 @@
             });
         }
         
-        // Speech Recognition
+        // Check if text contains vision keywords
+        function shouldCaptureImage(text) {
+            const lowerText = text.toLowerCase();
+            return VISION_KEYWORDS.some(keyword => lowerText.includes(keyword.toLowerCase()));
+        }
+        
+        // Speech Recognition with Continuous Listening
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition;
         
         if (SpeechRecognition) {
             recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
+            recognition.continuous = true; // CHANGED: Continuous listening
+            recognition.interimResults = true; // CHANGED: Get interim results
             recognition.lang = 'en-US';
-            
-            recognition.onresult = (event) => {
-                const text = event.results[0][0].transcript;
-                userSpeechText.textContent = `You said: "${text}"`;
-                handleUserSpeech(text);
-            };
             
             recognition.onstart = () => {
                 isListening = true;
-                micButton.classList.add('mic-active');
-                statusText.textContent = "Listening...";
+                micButton.classList.add('mic-listening');
+                listeningIndicator.classList.remove('hidden');
+                updateMainStatus("🎤 Listening continuously...");
+                statusText.textContent = "Listening";
+                resetSilenceTimeout();
             };
             
-            recognition.onend = () => {
-                isListening = false;
-                micButton.classList.remove('mic-active');
+            recognition.onresult = (event) => {
+                // Reset silence timeout on any speech
+                resetSilenceTimeout();
+                
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                // Show interim results
+                if (interimTranscript) {
+                    userSpeechText.textContent = `Listening: "${interimTranscript}"`;
+                    micButton.classList.add('mic-listening');
+                }
+                
+                // Process final results
+                if (finalTranscript) {
+                    userSpeechText.textContent = `You said: "${finalTranscript}"`;
+                    handleUserSpeech(finalTranscript);
+                }
             };
             
             recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
-                isListening = false;
-                micButton.classList.remove('mic-active');
+                if (event.error === 'no-speech') {
+                    // This is normal for continuous listening
+                    return;
+                }
+                stopListening();
                 showError("Speech recognition error");
-                statusText.textContent = "Error listening";
+                updateMainStatus("Speech recognition error");
+            };
+            
+            recognition.onend = () => {
+                // Auto-restart for continuous listening
+                if (isListening && !isAISpeaking) {
+                    setTimeout(() => {
+                        if (isListening) {
+                            recognition.start();
+                        }
+                    }, 100);
+                }
             };
         }
         
-        // Camera Management - FIXED FRONT CAMERA
+        // Start listening
+        function startListening() {
+            if (!SpeechRecognition) {
+                showError("Speech recognition not supported");
+                return;
+            }
+            
+            if (!isListening && !isAISpeaking) {
+                try {
+                    recognition.start();
+                } catch (error) {
+                    console.error('Error starting recognition:', error);
+                }
+            }
+        }
+        
+        // Stop listening
+        function stopListening() {
+            if (isListening) {
+                isListening = false;
+                recognition.stop();
+                micButton.classList.remove('mic-listening', 'mic-active');
+                listeningIndicator.classList.add('hidden');
+                userSpeechText.textContent = "";
+                updateMainStatus("Tap mic to start conversation");
+                statusText.textContent = "Ready";
+                
+                if (silenceTimeout) {
+                    clearTimeout(silenceTimeout);
+                }
+            }
+        }
+        
+        // Camera Management
         async function startCamera(front = false) {
             try {
                 if (stream) {
@@ -478,19 +614,13 @@
                 cameraView.srcObject = stream;
                 isCameraActive = true;
                 
-                // Set canvas size when video metadata is loaded
-                cameraView.onloadedmetadata = () => {
-                    detectionCanvas.width = cameraView.videoWidth;
-                    detectionCanvas.height = cameraView.videoHeight;
-                };
-                
                 cameraStatus.textContent = front ? "Front camera active" : "Back camera active";
                 showSuccess(`Camera activated (${front ? 'Front' : 'Back'})`);
                 
             } catch (error) {
                 console.error('Error accessing camera:', error);
                 showError("Camera access denied - please allow camera permissions");
-                statusText.textContent = "Camera access denied";
+                updateMainStatus("Camera access denied");
             }
         }
         
@@ -524,7 +654,7 @@
                         requestBody.contents[0].parts.push({
                             inline_data: {
                                 mime_type: "image/jpeg",
-                                data: imageData.split(',')[1] // Remove data:image/jpeg;base64, prefix
+                                data: imageData.split(',')[1]
                             }
                         });
                     }
@@ -573,7 +703,6 @@
         // Generate Image with AI
         async function generateImageWithAI(prompt) {
             try {
-                // Using a free image generation API (replace with your preferred service)
                 const response = await fetch('https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt), {
                     method: 'GET'
                 });
@@ -588,17 +717,16 @@
 
             } catch (error) {
                 console.error('Image generation error:', error);
-                // Fallback: Use a placeholder service
                 return `https://via.placeholder.com/512/667eea/ffffff?text=${encodeURIComponent(prompt)}`;
             }
         }
         
-        // Text-to-Speech
+        // Text-to-Speech with interrupt capability
         function speakAI(text) {
             return new Promise((resolve) => {
                 isAISpeaking = true;
-                statusText.textContent = "AI is speaking...";
                 
+                // Stop any ongoing speech
                 window.speechSynthesis.cancel();
                 
                 const utterance = new SpeechSynthesisUtterance(text);
@@ -606,42 +734,66 @@
                 utterance.pitch = 1;
                 utterance.volume = 1;
                 
+                utterance.onstart = () => {
+                    updateMainStatus("AI is speaking...");
+                    statusText.textContent = "Speaking";
+                };
+                
                 utterance.onend = () => {
                     isAISpeaking = false;
-                    statusText.textContent = "Tap mic to speak";
+                    if (isListening) {
+                        updateMainStatus("🎤 Listening... Speak now");
+                        statusText.textContent = "Listening";
+                    } else {
+                        updateMainStatus("Tap mic to start conversation");
+                        statusText.textContent = "Ready";
+                    }
                     resolve();
                 };
                 
                 utterance.onerror = (event) => {
                     console.error('Speech synthesis error:', event);
                     isAISpeaking = false;
-                    statusText.textContent = "Speech error";
+                    updateMainStatus("Speech error");
+                    statusText.textContent = "Error";
                     resolve();
                 };
                 
+                // Add interrupt capability
+                utterance.onboundary = (event) => {
+                    if (!isAISpeaking) {
+                        window.speechSynthesis.cancel();
+                    }
+                };
+                
                 setTimeout(() => {
-                    window.speechSynthesis.speak(utterance);
+                    if (isAISpeaking) {
+                        window.speechSynthesis.speak(utterance);
+                    }
                 }, 100);
             });
         }
         
-        // Command Handling with Camera Vision
+        // Command Handling with Auto Image Capture
         async function handleUserSpeech(text) {
             try {
-                statusText.textContent = "Processing with Gemini AI...";
+                // Stop any ongoing AI speech when user speaks
+                if (isAISpeaking) {
+                    window.speechSynthesis.cancel();
+                    isAISpeaking = false;
+                }
+                
+                updateMainStatus("Processing with Gemini AI...");
+                statusText.textContent = "Processing";
                 
                 let response;
                 let generatedImageUrl = null;
                 let includeCameraImage = false;
                 
-                // Check if we need to analyze camera image
-                if (text.toLowerCase().includes('age') || 
-                    text.toLowerCase().includes('guess') ||
-                    text.toLowerCase().includes('what is this') ||
-                    text.toLowerCase().includes('analyze') ||
-                    text.toLowerCase().includes('see') && isCameraActive) {
+                // Auto-detect if camera image should be sent
+                if (shouldCaptureImage(text) && isCameraActive) {
                     includeCameraImage = true;
-                    cameraStatus.textContent = "📸 Analyzing camera image...";
+                    cameraStatus.textContent = "📸 Capturing image for analysis...";
                 }
                 
                 // Check if we need to generate image
@@ -671,7 +823,7 @@
                 
                 // Speak the response
                 await speakAI(response);
-                cameraStatus.textContent = "Camera ready - Show objects to analyze";
+                cameraStatus.textContent = "Camera ready - Show objects and ask questions";
                 
             } catch (error) {
                 console.error('Error processing speech:', error);
@@ -690,7 +842,7 @@
             }
             
             try {
-                statusText.textContent = "Analyzing camera image...";
+                updateMainStatus("Analyzing camera image...");
                 const response = await queryGeminiAPI("Describe what you see in this image in detail", true);
                 addToConversation("Analyze what you see", response);
                 await speakAI(response);
@@ -701,12 +853,10 @@
         
         // Event Listeners
         micButton.addEventListener('click', () => {
-            if (!isListening && !isAISpeaking) {
-                if (!SpeechRecognition) {
-                    showError("Speech recognition not supported");
-                    return;
-                }
-                recognition.start();
+            if (isListening) {
+                stopListening();
+            } else {
+                startListening();
             }
         });
         
@@ -732,7 +882,7 @@
         // Initialize everything
         window.addEventListener('load', async () => {
             try {
-                statusText.textContent = "Initializing AI Assistant...";
+                updateMainStatus("Initializing AI Assistant...");
                 
                 await loadDetectionModel();
                 await startCamera(false);
@@ -741,16 +891,16 @@
                 try {
                     await queryGeminiAPI("Hello");
                     showSuccess("Gemini AI connected successfully!");
-                    statusText.textContent = "Ready! Show objects to camera and ask questions";
+                    updateMainStatus("Ready! Tap mic to start conversation");
                 } catch (apiError) {
                     showError("Gemini API issues - using fallback mode");
-                    statusText.textContent = "Ready (fallback mode)";
+                    updateMainStatus("Ready (fallback mode)");
                 }
                 
             } catch (error) {
                 console.error('Initialization error:', error);
                 showError("Failed to initialize application");
-                statusText.textContent = "Initialization failed";
+                updateMainStatus("Initialization failed");
             }
         });
 
@@ -758,9 +908,7 @@
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
                 window.speechSynthesis.cancel();
-                if (recognition && isListening) {
-                    recognition.stop();
-                }
+                stopListening();
             }
         });
 
